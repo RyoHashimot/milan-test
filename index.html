@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MILANO26 — three.js 3D rotating text</title>
+  <style>
+    html,body{height:100%;margin:0;background:#0b0b0f;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    #app{width:100%;height:100%;position:fixed;inset:0;overflow:hidden}
+    .overlay{
+      position:absolute;left:16px;top:16px;z-index:2;
+      background:rgba(0,0,0,0.35);backdrop-filter:blur(6px);
+      padding:8px 12px;border-radius:8px;font-size:13px;
+    }
+    /* make the iframe-style embedding friendly: the canvas will scale to container */
+    canvas{display:block}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="overlay">MILANO26 — rotating 3D text (three.js)</div>
+  </div>
+
+  <!-- three.js core -->
+  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <!-- loaders and extras (non-module) -->
+  <script src="https://threejs.org/examples/js/loaders/FontLoader.js"></script>
+  <script src="https://threejs.org/examples/js/geometries/TextGeometry.js"></script>
+
+  <script>
+    // Basic scene setup
+    const container = document.getElementById('app');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080812);
+
+    const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 20, 120);
+
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x111122, 0.6);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(50, 80, 40);
+    dir.castShadow = true;
+    scene.add(dir);
+
+    // subtle fill lights
+    const fill1 = new THREE.PointLight(0xffe0c0, 0.25, 300);
+    fill1.position.set(-80, 20, 80);
+    scene.add(fill1);
+    const fill2 = new THREE.PointLight(0x8fbaff, 0.25, 300);
+    fill2.position.set(60, -20, -80);
+    scene.add(fill2);
+
+    // ground reflection plane (simple)
+    const groundMat = new THREE.MeshStandardMaterial({color:0x05050a, roughness:0.9, metalness:0});
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000), groundMat);
+    ground.rotation.x = -Math.PI/2;
+    ground.position.y = -40;
+    scene.add(ground);
+
+    // group for text so we can center & rotate
+    const textGroup = new THREE.Group();
+    scene.add(textGroup);
+
+    // load font and create text
+    const loader = new THREE.FontLoader();
+    // using a three.js hosted font JSON
+    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font){
+      const str = 'MILANO26';
+      const geometry = new THREE.TextGeometry(str, {
+        font: font,
+        size: 20,
+        height: 6,
+        curveSegments: 10,
+        bevelEnabled: true,
+        bevelThickness: 1.2,
+        bevelSize: 0.9,
+        bevelOffset: 0,
+        bevelSegments: 6
+      });
+
+      // center geometry
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      const xMid = -0.5 * (bbox.max.x - bbox.min.x);
+      const yMid = -0.5 * (bbox.max.y - bbox.min.y);
+      geometry.translate(xMid, yMid, 0);
+
+      // material: slightly metallic, layered look
+      const matFront = new THREE.MeshStandardMaterial({color:0xffe08a, metalness:0.6, roughness:0.25});
+      const matSide  = new THREE.MeshStandardMaterial({color:0x332a20, metalness:0.2, roughness:0.6});
+
+      // Using different materials for front and side requires geometry groups; TextGeometry already sets groups
+      const mesh = new THREE.Mesh(geometry, [matFront, matSide]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      textGroup.add(mesh);
+
+      // small decorative inner outline (thin scaled duplicate)
+      const outlineGeo = geometry.clone();
+      const outlineMat = new THREE.MeshBasicMaterial({color:0x000000, transparent:true, opacity:0.08});
+      const outline = new THREE.Mesh(outlineGeo, outlineMat);
+      outline.scale.multiplyScalar(1.03);
+      outline.position.z = -0.5;
+      textGroup.add(outline);
+
+      // position group
+      textGroup.position.y = 0;
+
+      // animate rotation slowly
+      animate();
+    });
+
+    // subtle camera movement on mouse for parallax
+    let mouseX = 0, mouseY = 0;
+    document.addEventListener('mousemove', (e)=>{
+      const nx = (e.clientX / window.innerWidth - 0.5) * 2;
+      const ny = (e.clientY / window.innerHeight - 0.5) * -2;
+      mouseX = nx * 8;
+      mouseY = ny * 6;
+    });
+
+    // animation loop
+    let lastTime = 0;
+    function animate(time){
+      requestAnimationFrame(animate);
+      const t = (time || 0) * 0.001; // seconds
+
+      // rotate group slowly
+      textGroup.rotation.y += 0.004; // base slow rotation
+      textGroup.rotation.x = THREE.MathUtils.lerp(textGroup.rotation.x, mouseY * 0.02, 0.04);
+      textGroup.rotation.z = THREE.MathUtils.lerp(textGroup.rotation.z, mouseX * 0.002, 0.04);
+
+      // gentle up/down bob
+      textGroup.position.y = Math.sin(t * 0.6) * 2;
+
+      // camera subtle look-at
+      const camTarget = new THREE.Vector3(0,0,0);
+      camera.position.x += (mouseX - camera.position.x) * 0.02;
+      camera.position.y += (mouseY*6 + 10 - camera.position.y) * 0.02;
+      camera.lookAt(camTarget);
+
+      renderer.render(scene, camera);
+    }
+
+    // handle resize
+    window.addEventListener('resize', onWindowResize);
+    function onWindowResize(){
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    }
+
+    // fallback: if font failed to load, show a simple fallback text
+    setTimeout(()=>{
+      if(textGroup.children.length === 0){
+        const geo = new THREE.TextGeometry('MILANO26', {font: new THREE.Font(), size:20, height:6});
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color:0xffffff}));
+        textGroup.add(m);
+      }
+    }, 4000);
+  </script>
+</body>
+</html>
